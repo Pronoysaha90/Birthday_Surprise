@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>3×3 Drag Puzzle — Cinematic</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      min-height:100%;
+      color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background:#000;
+      overflow-x:hidden;
+    }
+
+    /* Starfield canvas behind everything */
+    #stars{
+      position:fixed; inset:0;
+      width:100%; height:100%;
+      z-index:0; pointer-events:none;
+      display:block;
+    }
+
+    /* Cinematic overlays */
+    .vignette{
+      position:fixed; inset:0; z-index:0; pointer-events:none;
+      background:
+        radial-gradient(120vmax 120vmax at 50% 60%, rgba(40,60,120,.18), transparent 55%),
+        radial-gradient(120vmax 120vmax at 10% -10%, rgba(255,110,199,.18), transparent 45%),
+        radial-gradient(120vmax 120vmax at 110% 110%, rgba(122,252,255,.16), transparent 45%),
+        radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,.55) 100%);
+    }
+
+    .glow-top{
+      position:fixed; left:50%; top:-120px; transform:translateX(-50%);
+      width:80vmin; height:80vmin; z-index:0; pointer-events:none;
+      background:radial-gradient(circle, rgba(80,120,255,.16), transparent 60%);
+      filter: blur(20px);
+    }
+
+    /* Content container (narrower) */
+    .wrap{
+      position:relative; z-index:1;
+      width:min(94vw, 640px);
+      margin: clamp(12px, 5vh, 24px) auto;
+      display:flex; flex-direction:column; gap:14px; align-items:center;
+    }
+
+    header{
+      width:100%;
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px; padding:10px 6px;
+    }
+
+    .brand{ display:flex; align-items:center; gap:10px }
+    .brand-badge{
+      width:38px; height:38px; border-radius:12px;
+      background: linear-gradient(135deg,#7afcff,#ff6ec7);
+      box-shadow: 0 10px 26px rgba(122,252,255,.25);
+    }
+    .title{ line-height:1.05 }
+    .title h1{
+      font-size:22px; letter-spacing:.3px; font-weight:800;
+      background: linear-gradient(90deg,#7afcff,#ff6ec7);
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+    }
+
+    /* Preview: small “Follow image” */
+    .preview{
+      width:100%;
+      display:flex; align-items:center; justify-content:center;
+      gap:12px; padding:6px 0;
+    }
+    .preview h2{
+      font-size:14px; font-weight:800; opacity:.95; letter-spacing:.3px;
+    }
+    .demo{
+      width:120px; aspect-ratio: 1 / 1;         /* small preview */
+      border-radius:12px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      background-image:url('image/puzzleImage.jpeg');
+      background-size: cover;                    /* fill box neatly */
+      background-position: center;               /* center focus */
+      background-repeat:no-repeat;
+    }
+
+    /* Board card (compact) */
+    .card{
+      width:100%;
+      max-width: 460px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.10);
+      background: linear-gradient(180deg, rgba(20,20,36,.55), rgba(10,12,24,.85));
+      box-shadow: 0 30px 80px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.06);
+      padding:12px 10px 10px;
+      display:flex; flex-direction:column; gap:10px; align-items:center;
+    }
+
+    /* Smaller board while staying square via aspect-ratio */
+    .board-wrap{
+      position:relative;
+      width: clamp(240px, 62vmin, 380px);
+      aspect-ratio:1/1;
+      border-radius:14px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 20px 70px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+      background: rgba(10,14,28,.6);
+      padding:8px;
+      backdrop-filter: blur(2px);
+    }
+
+    .board{
+      position:absolute; inset:8px;
+      display:grid; gap:6px;                    /* tighter grid */
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+    }
+
+    .tile{
+      position:relative; border-radius:12px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.14);
+      background:#0b1220;
+      box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      user-select:none;
+    }
+    .tile[draggable="true"]{ cursor:grab }
+    .tile.dragging{ opacity:.75; outline:2px dashed rgba(255,255,255,.25) }
+
+    .tile::before{
+      content:"";
+      position:absolute; inset:0;
+      background-image:url('image/puzzleImage.jpeg');
+      background-size: 300% 300%;               /* 3x3 slicing grid */
+      background-repeat:no-repeat;
+      background-position: var(--bg-pos, 0% 0%);
+      filter: saturate(1.05) contrast(1.05) brightness(1.02);
+      transition: transform .08s ease;
+    }
+
+    .blank{
+      background: repeating-conic-gradient(from 0deg, rgba(255,255,255,.06) 0 10deg, rgba(255,255,255,.1) 10deg 20deg);
+      border:2px dashed rgba(255,255,255,.35);
+      outline-offset:-4px;
+    }
+    .drop-ok{ box-shadow: 0 0 0 3px rgba(122,252,255,.35) inset }
+
+    .bar{
+      width:100%;
+      display:flex; gap:10px; align-items:center; justify-content:center;
+      flex-wrap:wrap;
+    }
+    .btn{
+      border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:800;
+      background:linear-gradient(135deg,#667eea,#764ba2); color:#fff;
+      box-shadow:0 6px 18px rgba(102,126,234,.35);
+      transition: transform .08s ease;
+    }
+    .btn.secondary{ background:rgba(255,255,255,.14); box-shadow:none }
+    .btn:active{ transform: translateY(1px) }
+
+    /* Intro modal */
+    .modal{
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background: radial-gradient(ellipse at center, rgba(10,10,26,.75), rgba(5,5,16,.9));
+      z-index:2; backdrop-filter: blur(3px);
+    }
+    .intro-card{
+      width:min(560px,90vw); padding:20px 18px 16px; border-radius:14px;
+      background: linear-gradient(180deg, rgba(30,30,60,.6), rgba(18,18,36,.9));
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+    }
+    .intro-card h2{
+      font-size:28px; margin-bottom:6px;
+      background: linear-gradient(90deg,#7afcff,#ff6ec7); -webkit-background-clip:text; background-clip:text; color:transparent;
+    }
+    .intro-card ul{ margin:8px 0 12px 18px }
+    .intro-card li{ margin:6px 0; opacity:.92 }
+    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:12px }
+
+    /* Win toast */
+    .toast{
+      position:fixed; left:50%; top:22px; transform:translateX(-50%);
+      background: rgba(30,30,60,.8); border:1px solid rgba(255,255,255,.14);
+      color:#fff; padding:10px 14px; border-radius:12px; z-index:3;
+      display:none;
+    }
+    .toast.show{ display:block }
+
+    /* Music control button */
+    .music-control{
+      position: fixed; right:16px; bottom:16px; z-index:4;
+      width:44px; height:44px; border-radius:50%;
+      border:1px solid rgba(255,255,255,.2);
+      background: radial-gradient(circle at 30% 30%, rgba(122,252,255,.25), rgba(255,110,199,.25));
+      color:#fff; font-size:18px; cursor:pointer;
+      box-shadow: 0 8px 22px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+      transition: transform .08s ease, box-shadow .2s ease;
+    }
+    .music-control.playing{ box-shadow: 0 0 0 3px rgba(122,252,255,.35), 0 8px 22px rgba(0,0,0,.45) }
+    .music-control:active{ transform: translateY(1px) }
+
+    /* Motion preference */
+    @media (prefers-reduced-motion: reduce){
+      #stars{ display:none }
+      .vignette, .glow-top{ display:none }
+    }
+
+    /* Ultra-compact on tiny phones */
+    @media (max-width: 360px){
+      .board-wrap{ width: clamp(220px, 58vmin, 340px) }
+      .board{ gap:5px }
+      .demo{ width:108px }
+    }
+  </style>
+</head>
+<body>
+  <!-- Shooting star background -->
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="glow-top" aria-hidden="true"></div>
+
+  <!-- Intro -->
+  <div class="modal" id="intro">
+    <div class="intro-card">
+      <h2>Image Drag Puzzle (3×3 — Easy)</h2>
+      <p>শুরু করার আগে ছোট্ট পরিচিতি ও নিয়ম দেখে নাও:</p>
+      <ul>
+        <li>এটি 3×3 পাজল — 8টি টাইল + 1টি খালি ঘর।</li>
+        <li>যেকোনো টাইলকে অন্য টাইল বা খালি ঘরের উপর ড্রপ করলে দুই পজিশন swap হবে — মিলানো খুব সহজ হবে।</li>
+        <li>Shuffle করলে odd width বোর্ডের নিয়ম অনুসারে solvable কনফিগারেশন থেকেই শুরু হবে।</li>
+        <li>সব টাইল ঠিক জায়গায় এলে ছবিটি পূর্ণ হবে — তাহলেই জয়।</li>
+        <li>Auto Solve চাপলে টাইলগুলো স্বয়ংক্রিয়ভাবে সঠিক ঘরে চলে যাবে।</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn" id="startBtn">Start</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" aria-live="polite">
+    <header>
+      <div class="brand">
+        <div class="brand-badge" aria-hidden="true"></div>
+        <div class="title">
+          <h1>3×3 Drag-and-Drop Puzzle</h1>
+        </div>
+      </div>
+    </header>
+
+    <!-- Small preview (same source) -->
+    <div class="preview" aria-hidden="false">
+      <h2>Follow image</h2>
+      <div class="demo" role="img" aria-label="Original image preview"></div>
+    </div>
+
+    <section class="card">
+      <div class="board-wrap">
+        <div class="board" id="board" aria-label="3 by 3 image dragging puzzle"></div>
+      </div>
+
+      <div class="bar">
+        <button class="btn secondary" id="shuffleBtn">Shuffle</button>
+        <button class="btn" id="autoBtn">Auto Solve</button>
+        <div>Moves: <span id="moves">0</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="winToast">Hurry, Solved 🎉</div>
+
+  <!-- Background music (shared asset) -->
+  <audio id="bgAudio" preload="auto" loop>
+    <source src="audio/Sahiba.mp3" type="audio/mpeg">
+  </audio>
+  <button id="musicBtn" class="music-control" aria-label="Toggle music" aria-pressed="false">🎵</button>
+
+  <script>
+  (function(){
+    // Create an anchor host that will hold a Shadow Root
+    const host = document.createElement('div');
+    // Isolated shadow root for style encapsulation
+    const shadow = host.attachShadow({ mode: 'open' });
+
+    // Scoped styles: fixed, safe-area aware, no global leaks
+    const style = document.createElement('style');
+    style.textContent = `
+      a{
+        position: fixed;
+        left: calc(16px + env(safe-area-inset-left, 0px));
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        z-index: 6;
+        display: inline-flex; align-items: center; justify-content: center;
+        gap: 8px; padding: 10px 14px;
+        border-radius: 12px; border: 1px solid rgba(255,255,255,.18);
+        background: linear-gradient(135deg,#7afcff33,#ff6ec733);
+        color: #fff; text-decoration: none; font-weight: 800;
+        box-shadow: 0 10px 26px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+        backdrop-filter: blur(4px);
+        transition: transform .08s ease, box-shadow .2s ease;
+        contain: paint;    /* isolate painting of this control */
+      }
+      a:hover{ box-shadow: 0 12px 30px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.1) }
+      a:active{ transform: translateY(1px) }
+      @media (prefers-reduced-motion: reduce){
+        a{ transition: none }
+      }
+    `;
+
+    // Accessible, keyboard-focusable anchor
+    const link = document.createElement('a');
+    link.href = 'gift.html';
+    link.setAttribute('aria-label', 'View Gift');
+    link.textContent = '🎁 View Gift';
+
+    shadow.append(style, link);
+    document.body.appendChild(host);
+  })();
+</script>
+
+
+  <script>
+    // ---------- Starfield + Shooting Stars (cinematic background) ----------
+    (() => {
+      const canvas = document.getElementById('stars');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      let W=0, H=0;
+      let stars = [];
+      const STAR_COUNT_BASE = 180;
+      const SHOOT_INTERVAL = 5000; // ms
+      const shootings = [];
+      let last = 0;
+      let dirLTR = true; // alternate left->right and right->left
+
+      function resize(){
+        const {innerWidth, innerHeight} = window;
+        W = Math.floor(innerWidth);
+        H = Math.floor(innerHeight);
+        canvas.width = Math.floor(W * DPR);
+        canvas.height = Math.floor(H * DPR);
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        initStars();
+      }
+
+      function rand(a,b){ return a + Math.random()*(b-a); }
+
+      function initStars(){
+        const count = Math.round(STAR_COUNT_BASE * (W*H)/(1280*720));
+        stars = Array.from({length: count}, () => ({
+          x: Math.random()*W,
+          y: Math.random()*H,
+          r: rand(.4, 1.5),
+          s: rand(8, 22) // px/sec upward
+        }));
+      }
+
+      function spawnShootingStar(leftToRight=true){
+        const y = rand(H*0.1, H*0.7);
+        const len = rand(120, 220);
+        const speed = rand(380, 520); // px/sec
+        let x, vx;
+        if(leftToRight){
+          x = -len; vx = speed;
+        }else{
+          x = W + len; vx = -speed;
+        }
+        shootings.push({ x, y, vx, len, life: 0, maxLife: 1100 }); // ms
+      }
+
+      function scheduleShooter(){
+        setTimeout(() => {
+          spawnShootingStar(dirLTR);
+          dirLTR = !dirLTR;
+          scheduleShooter();
+        }, SHOOT_INTERVAL);
+      }
+
+      function drawStars(dt){
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        for(const st of stars){
+          st.y -= st.s * dt;
+          if(st.y < -2){ st.y = H + 2; st.x = Math.random()*W; }
+          ctx.globalAlpha = 0.75 + Math.sin((st.x+st.y)*0.02)*0.25;
+          ctx.beginPath();
+          ctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawShooters(dt){
+        for(let i=shootings.length-1; i>=0; i--){
+          const sh = shootings[i];
+          sh.x += sh.vx * dt;
+          sh.life += dt*1000;
+          // trail
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = 'rgba(122,252,255,0.9)';
+          ctx.beginPath();
+          const tailX = sh.x - Math.sign(sh.vx)*sh.len;
+          ctx.moveTo(tailX, sh.y);
+          ctx.lineTo(sh.x, sh.y);
+          ctx.stroke();
+          ctx.restore();
+
+          if(sh.life > sh.maxLife || sh.x < -sh.len-20 || sh.x > W+sh.len+20){
+            shootings.splice(i,1);
+          }
+        }
+      }
+
+      function loop(ts){
+        if(!last) last = ts;
+        const dt = Math.min(0.05, (ts - last)/1000);
+        last = ts;
+
+        ctx.clearRect(0,0,W,H);
+        drawStars(dt);
+        drawShooters(dt);
+        requestAnimationFrame(loop);
+      }
+
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+        canvas.style.display = 'none';
+      }else{
+        resize();
+        window.addEventListener('resize', resize);
+        scheduleShooter();
+        requestAnimationFrame(loop);
+      }
+    })();
+
+    // ---------- Music (shared across pages via localStorage) ----------
+    (() => {
+      const audio = document.getElementById('bgAudio');
+      const btn = document.getElementById('musicBtn');
+
+      // Restore last state/time
+      const savedPref = localStorage.getItem('musicPref'); // 'on' | 'off'
+      const savedTime = parseFloat(localStorage.getItem('musicTime') || '0');
+      if (!Number.isNaN(savedTime)) { audio.currentTime = Math.max(0, savedTime); }
+      updateButton(!(savedPref === 'off'));
+
+      // Toggle handler
+      btn.addEventListener('click', () => {
+        if (audio.paused) {
+          audio.play().then(() => {
+            localStorage.setItem('musicPref','on');
+            updateButton(true);
+          }).catch(() => {
+            updateButton(false);
+          });
+        } else {
+          audio.pause();
+          localStorage.setItem('musicPref','off');
+          updateButton(false);
+        }
+      });
+
+      // Persist on leave
+      const persist = () => {
+        try{
+          localStorage.setItem('musicTime', String(audio.currentTime || 0));
+          localStorage.setItem('musicPref', audio.paused ? 'off' : 'on');
+        }catch(e){}
+      };
+      window.addEventListener('pagehide', persist);
+      window.addEventListener('beforeunload', persist);
+
+      // Helpers
+      function updateButton(isPlaying){
+        btn.classList.toggle('playing', isPlaying);
+        btn.setAttribute('aria-pressed', String(isPlaying));
+        btn.textContent = isPlaying ? '🔊' : '🎵';
+      }
+
+      // Expose a start hook so game can autoplay after Start (user gesture)
+      window.__playMusicAfterStart = function delayPlay(ms=2000){
+        setTimeout(() => {
+          // Respect user pref if set to off
+          const pref = localStorage.getItem('musicPref');
+          if (pref === 'off') { updateButton(false); return; }
+          audio.play().then(() => {
+            localStorage.setItem('musicPref','on');
+            updateButton(true);
+          }).catch(() => {
+            // If blocked, button remains available
+            updateButton(false);
+          });
+        }, ms);
+      };
+    })();
+
+    // ---------- Puzzle ----------
+    (() => {
+      const W = 3, H = 3;            // 3×3 board
+      const TOTAL = W * H;            // 9 cells
+      const TILES = TOTAL - 1;        // 8 tiles
+      const BLANK = -1;
+
+      const boardEl = document.getElementById('board');
+      const movesEl = document.getElementById('moves');
+      const shuffleBtn = document.getElementById('shuffleBtn');
+      const intro = document.getElementById('intro');
+      const startBtn = document.getElementById('startBtn');
+      const winToast = document.getElementById('winToast');
+      const autoBtn = document.getElementById('autoBtn');
+
+      let board = [];   // length 9, values: 0..7 or BLANK
+      let moves = 0;
+
+      function isSolved(arr = board){
+        for(let i=0;i<TILES;i++){
+          if(arr[i] !== i) return false;
+        }
+        return arr[TOTAL-1] === BLANK;
+      }
+
+      function inversions(arr){
+        const a = arr.filter(v => v !== BLANK);
+        let inv=0;
+        for(let i=0;i<a.length;i++){
+          for(let j=i+1;j<a.length;j++){
+            if(a[i] > a[j]) inv++;
+          }
+        }
+        return inv;
+      }
+
+      function isSolvable(arr){
+        return inversions(arr) % 2 === 0;
+      }
+
+      function makeSolved(){
+        board = [0,1,2,3,4,5,6,7,BLANK];
+      }
+
+      function shuffleSolvable(){
+        const pool = Array.from({length:TILES}, (_,i)=>i); // 0..7
+        for(let tries=0; tries<2000; tries++){
+          const arr = [];
+          const tmp = pool.slice();
+          while(tmp.length) arr.push(tmp.splice(Math.floor(Math.random()*tmp.length),1)[0]);
+          const pos = Math.floor(Math.random()*TOTAL);
+          arr.splice(pos,0,BLANK);
+          if(isSolvable(arr) && !isSolved(arr)){
+            board = arr;
+            return;
+          }
+        }
+        makeSolved();
+      }
+
+      function render(){
+        boardEl.innerHTML = '';
+        boardEl.style.gridTemplateColumns = `repeat(${W},1fr)`;
+        boardEl.style.gridTemplateRows = `repeat(${H},1fr)`;
+
+        for(let i=0;i<TOTAL;i++){
+          const v = board[i];
+          const cell = document.createElement('div');
+          cell.className = 'tile' + (v===BLANK ? ' blank' : '');
+          cell.setAttribute('role','button');
+          cell.dataset.pos = String(i);
+
+          const r = Math.floor(i / W), c = i % W;
+          cell.style.gridRowStart = r+1;
+          cell.style.gridColumnStart = c+1;
+
+          cell.addEventListener('dragover', (e)=>{
+            e.preventDefault();
+            cell.classList.add('drop-ok');
+            e.dataTransfer.dropEffect = 'move';
+          });
+          cell.addEventListener('dragleave', ()=> cell.classList.remove('drop-ok'));
+          cell.addEventListener('drop', (e)=>{
+            e.preventDefault();
+            cell.classList.remove('drop-ok');
+            const data = e.dataTransfer.getData('text/plain');
+            if(!data && data!=='0') return;
+            const tileIndex = Number(data);
+            const targetPos = Number(cell.dataset.pos);
+            swapTileToPos(tileIndex, targetPos);
+          });
+
+          if(v!==BLANK){
+            const tr = Math.floor(v / W);
+            const tc = v % W;
+            const posX = (tc/(W-1))*100;
+            const posY = (tr/(H-1))*100;
+            cell.style.setProperty('--bg-pos', posX+'% '+posY+'%');
+
+            cell.draggable = true;
+            cell.dataset.tile = String(v);
+            cell.addEventListener('dragstart', (e)=>{
+              cell.classList.add('dragging');
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', cell.dataset.tile || '');
+            });
+            cell.addEventListener('dragend', ()=> cell.classList.remove('dragging'));
+          }
+
+          boardEl.appendChild(cell);
+        }
+      }
+
+      function swapTileToPos(tileIndex, targetPos){
+        const srcPos = board.indexOf(tileIndex);
+        if(srcPos === -1 || targetPos === -1 || srcPos === targetPos) return;
+        [board[srcPos], board[targetPos]] = [board[targetPos], board[srcPos]];
+        moves++; movesEl.textContent = String(moves);
+        render();
+        checkWin();
+      }
+
+      function checkWin(){
+        if(isSolved()){
+          winToast.classList.add('show');
+          setTimeout(()=> winToast.classList.remove('show'), 1800);
+        }
+      }
+
+      function reset(shuffle=true){
+        moves = 0; movesEl.textContent = '0';
+        if(shuffle){ shuffleSolvable(); } else { makeSolved(); }
+        render();
+      }
+
+      function buildSolvePlan(){
+        const plan = [];
+        const arr = board.slice();
+        for(let i=0;i<TILES;i++){
+          const p = arr.indexOf(i);
+          if(p !== i){
+            [arr[p], arr[i]] = [arr[i], arr[p]];
+            plan.push({tile:i, pos:i});
+          }
+        }
+        return plan;
+      }
+
+      function autoSolve(animated=true){
+        const steps = buildSolvePlan();
+        if(!steps.length){ checkWin(); return; }
+        if(!animated){
+          makeSolved(); moves++; movesEl.textContent = String(moves);
+          render(); checkWin(); return;
+        }
+        let i=0;
+        const tick = () => {
+          if(i >= steps.length){ checkWin(); return; }
+          const {tile, pos} = steps[i++];
+          swapTileToPos(tile, pos);
+          setTimeout(tick, 220);
+        };
+        tick();
+      }
+
+      // UI
+      shuffleBtn.addEventListener('click', ()=> reset(true));
+      startBtn.addEventListener('click', ()=>{
+        document.getElementById('intro').style.display='none';
+        reset(true);
+        // Start background music ~2s after "Start" to align with the game start
+        if (window.__playMusicAfterStart) window.__playMusicAfterStart(2000);
+      });
+      autoBtn.addEventListener('click', ()=> autoSolve(true));
+
+      // Initial preview behind intro
+      makeSolved();
+      render();
+    })();
+  </script>
+</body>
+</html>

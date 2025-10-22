@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Balloon Pop Game</title>
+<style>
+  /* Reset */
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background: radial-gradient(ellipse at center,#0a0a1a 0%,#050510 50%,#000 100%);
+    overflow:hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color:#fff;
+  }
+
+  /* Canvases */
+  #starsCanvas, #fxCanvas{
+    position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none;
+  }
+  #starsCanvas{z-index:1}
+  #fxCanvas{z-index:3}
+
+  /* UI layer */
+  .ui{
+    position:fixed; inset:0; z-index:4; pointer-events:none;
+    display:flex; align-items:flex-start; justify-content:space-between; padding:16px;
+  }
+  .score, .hint{
+    pointer-events:none; user-select:none; text-shadow:0 2px 10px rgba(0,0,0,.6);
+  }
+  .score{font-size:22px; font-weight:700}
+  .hint{font-size:14px; opacity:.8}
+
+  /* Balloon container */
+  .balloon-layer{
+    position:fixed; inset:0; z-index:2; overflow:hidden; pointer-events:none;
+  }
+
+  /* Balloon */
+  .balloon{
+    position:absolute; bottom:-120px; width:64px; height:82px;
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,.35));
+    transform: translateX(-50%) scale(1); transform-origin:center bottom;
+    cursor: crosshair; pointer-events:auto;
+  }
+  .balloon:before, .balloon:after{
+    content:""; position:absolute; left:50%; transform:translateX(-50%);
+  }
+  .balloon:before{
+    top:0; width:64px; height:64px; border-radius:50%;
+    background: var(--grad,#ff6ec7);
+    box-shadow: inset -8px -10px 18px rgba(0,0,0,.25), inset 10px 12px 22px rgba(255,255,255,.18);
+  }
+  .balloon:after{
+    top:62px; width:12px; height:10px; border-radius:2px 2px 6px 6px;
+    background: rgba(0,0,0,.25);
+  }
+  .string{
+    position:absolute; top:72px; left:50%; transform:translateX(-50%);
+    width:2px; height:120px; background: linear-gradient(#cfd9ff,#7783d8);
+    opacity:.85;
+  }
+
+  /* Pop */
+  @keyframes pop { 0% { transform: translateX(-50%) scale(1); opacity:1 } 100%{ transform: translateX(-50%) scale(1.35); opacity:0 } }
+  .popping .balloon:before{ animation: pop .22s ease-out forwards }
+  .popping .string{ opacity:0 }
+
+  /* Emoji */
+  .emoji{
+    position:absolute; font-size:24px; will-change: transform, opacity;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,.4));
+    pointer-events:none; z-index:5;
+  }
+
+  /* Compliment text (smaller, single-line) */
+  .compliment{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-weight:800; font-size:20px; letter-spacing:.3px;
+    padding:8px 12px; border-radius:12px;
+    background: rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.18);
+    box-shadow: 0 12px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.08);
+    opacity:0; z-index:6; pointer-events:none; text-align:center;
+    max-width:min(80vw,520px);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  @keyframes complimentInOut{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(.9) }
+    12%{ opacity:1; transform:translate(-50%,-50%) scale(1) }
+    80%{ opacity:1 }
+    100%{ opacity:0; transform:translate(-50%,-50%) scale(1.03) }
+  }
+
+  /* Travel */
+  @keyframes floatUp { 0%   { transform: translateY(0) } 100% { transform: translateY(-115vh) } }
+
+  /* Start button (fallback) */
+  .start{
+    position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
+    background:linear-gradient(135deg,#667eea,#764ba2); border:none; color:#fff;
+    padding:12px 22px; border-radius:28px; cursor:pointer; z-index:4;
+    box-shadow:0 8px 26px rgba(102,126,234,.45); font-weight:700; display:none;
+  }
+
+  /* Intro modal */
+  .modal{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, rgba(10,10,26,.75), rgba(5,5,16,.9));
+    z-index:5; backdrop-filter: blur(4px);
+  }
+  .card{
+    width:min(560px,90vw); padding:22px 22px 18px; border-radius:16px;
+    background: linear-gradient(180deg, rgba(30,30,60,.6), rgba(18,18,36,.9));
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .card h2{
+    font-family:'Great Vibes', cursive, system-ui;
+    font-size:40px; letter-spacing:1px;
+    background: linear-gradient(90deg,#ff6ec7,#7afcff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    margin-bottom:8px;
+  }
+  .card p{opacity:.9; line-height:1.6; margin:6px 0}
+  .rules{ margin:10px 0 14px; padding-left:16px }
+  .rules li{ margin:6px 0 }
+  .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:12px }
+  .btn{ border:none; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:700 }
+  .btn.secondary{ background:rgba(255,255,255,.12); color:#fff; text-decoration:none; display:inline-block }
+  .btn.primary{ background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; box-shadow:0 6px 18px rgba(102,126,234,.4); text-decoration:none; display:inline-block }
+
+  /* New: controls bar */
+  .controls{
+    position:fixed; left:50%; bottom:16px; transform:translateX(-50%);
+    display:none; gap:10px; z-index:4; pointer-events:auto;
+  }
+
+  /* Hide helper */
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<canvas id="starsCanvas"></canvas>
+<canvas id="fxCanvas"></canvas>
+
+<div class="ui">
+  <div class="score">Score: <span id="score">0</span></div>
+  <div class="hint">Click/Tap balloons to pop</div>
+</div>
+
+<div class="balloon-layer" id="layer"></div>
+
+<button class="start" id="startBtn">Start</button>
+
+<!-- New: Controls (Finish + Next Game) -->
+<div class="controls" id="controls">
+  <button class="btn secondary" id="finishBtn">Finish</button>
+  <a class="btn primary" id="nextBtn" href="nextGame.html">Next Game</a>
+</div>
+
+<!-- Intro / Rules Modal -->
+<div class="modal" id="intro">
+  <div class="card">
+    <h2>Balloon Pop</h2>
+    <p>Welcome! Pop balloons to earn points, enjoy the night sky, and catch cute emojis as they fall.</p>
+    <ul class="rules">
+      <li>Click or tap a balloon to pop it.</li>
+      <li>Each pop = +1 score.</li>
+      <li>Balloons float up; don’t let them escape!</li>
+      <li>A sweet compliment appears with every pop.</li>
+    </ul>
+    <p>Ready to play?</p>
+    <div class="modal-actions">
+      <button class="btn secondary" id="laterBtn">Later</button>
+      <button class="btn primary" id="okStart">OK, Start!</button>
+    </div>
+  </div>
+</div>
+
+<!-- New: Finish Modal -->
+<div class="modal hidden" id="finishModal">
+  <div class="card">
+    <h2>Great job!</h2>
+    <p>Your score: <span id="finalScore">0</span></p>
+    <div class="modal-actions">
+      <button class="btn secondary" id="playAgainBtn">Play Again</button>
+      <a class="btn primary" href="nextGame.html">Next Game</a>
+    </div>
+  </div>
+</div>
+
+<!-- Compliment overlay -->
+<div class="compliment" id="complimentBox"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  /* ===== Shooting Stars Background ===== */
+  const starsCanvas = document.getElementById('starsCanvas');
+  const sctx = starsCanvas.getContext('2d');
+
+  function sizeStars(){ starsCanvas.width = innerWidth; starsCanvas.height = innerHeight; makeStars(); }
+  let stars = [];
+  function makeStars(){
+    stars = [];
+    const count = Math.floor((starsCanvas.width * starsCanvas.height) / 5000);
+    for(let i=0;i<count;i++){
+      stars.push({
+        x: Math.random()*starsCanvas.width,
+        y: Math.random()*starsCanvas.height,
+        r: Math.random()*1.2 + .4,
+        a: Math.random()*.5 + .3,
+        tw: Math.random()*0.001 + 0.0005
+      });
+    }
+  }
+  sizeStars();
+  addEventListener('resize', sizeStars);
+
+  const streaks = [];
+  function shoot(){
+    const side = Math.floor(Math.random()*4);
+    let x,y,ang;
+    if(side===0){ x=Math.random()*starsCanvas.width; y=-50; ang=(45+Math.random()*90)*Math.PI/180; }
+    else if(side===1){ x=starsCanvas.width+50; y=Math.random()*starsCanvas.height; ang=(135+Math.random()*90)*Math.PI/180; }
+    else if(side===2){ x=Math.random()*starsCanvas.width; y=starsCanvas.height+50; ang=(225+Math.random()*90)*Math.PI/180; }
+    else { x=-50; y=Math.random()*starsCanvas.height; ang=(315+Math.random()*90)*Math.PI/180; }
+    const sp = 250 + Math.random()*150;
+    streaks.push({x,y,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp,life:0,max:2.5+Math.random()*1.5,trail:[]});
+  }
+  for(let i=0;i<3;i++) setTimeout(shoot, i*400);
+  setInterval(()=>shoot(), 1500+Math.random()*1500);
+
+  function drawStars(t){
+    const dt = 0.016;
+    sctx.clearRect(0,0,starsCanvas.width,starsCanvas.height);
+    for(const st of stars){
+      st.a = 0.3 + 0.5*(0.5+0.5*Math.sin(t*st.tw));
+      sctx.fillStyle = `rgba(255,255,255,${st.a})`;
+      sctx.beginPath(); sctx.arc(st.x,st.y,st.r,0,Math.PI*2); sctx.fill();
+    }
+    for(let i=streaks.length-1;i>=0;i--){
+      const s = streaks[i];
+      s.life+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+      s.trail.push({x:s.x,y:s.y}); if(s.trail.length>80) s.trail.shift();
+      if(s.trail.length>1){
+        const g = sctx.createLinearGradient(s.trail[0].x,s.trail[0].y,s.x,s.y);
+        g.addColorStop(0,'rgba(158,203,255,0)'); g.addColorStop(1,'rgba(255,255,255,0.9)');
+        sctx.strokeStyle=g; sctx.lineWidth=2; sctx.beginPath();
+        sctx.moveTo(s.x,s.y);
+        for(let j=s.trail.length-1;j>=0;j--) sctx.lineTo(s.trail[j].x,s.trail[j].y);
+        sctx.stroke();
+      }
+      const head = sctx.createRadialGradient(s.x,s.y,0,s.x,s.y,12);
+      head.addColorStop(0,'rgba(255,255,255,1)'); head.addColorStop(0.5,'rgba(158,203,255,0.6)'); head.addColorStop(1,'rgba(158,203,255,0)');
+      sctx.fillStyle=head; sctx.beginPath(); sctx.arc(s.x,s.y,8,0,Math.PI*2); sctx.fill();
+      if(s.life>s.max || s.x<-100 || s.x>starsCanvas.width+100 || s.y<-100 || s.y>starsCanvas.height+100) streaks.splice(i,1);
+    }
+    requestAnimationFrame(drawStars);
+  }
+  requestAnimationFrame(drawStars);
+
+  /* ===== Balloon Game ===== */
+  const layer = document.getElementById('layer');
+  const fxCanvas = document.getElementById('fxCanvas');
+  const fctx = fxCanvas.getContext('2d');
+  function sizeFx(){ fxCanvas.width = innerWidth; fxCanvas.height = innerHeight; }
+  sizeFx(); addEventListener('resize', sizeFx);
+
+  const COLORS = [
+    'linear-gradient(135deg,#ff6ec7,#ff9acd)',
+    'linear-gradient(135deg,#ffd166,#ff9f66)',
+    'linear-gradient(135deg,#7afcff,#60a5ff)',
+    'linear-gradient(135deg,#b28dff,#8c6cff)',
+    'linear-gradient(135deg,#6ee7b7,#3fb98e)',
+    'linear-gradient(135deg,#ff8ba7,#ff5d8f)'
+  ];
+  const EMOJIS = ['🎉','💖','✨','🌟','😍','🥳','💫','🫶','😊','🎈'];
+  const COMPLIMENTS = [
+    "You are cute","You are sweet","You are strong","You are amazing","You are brilliant",
+    "You are kind","You are inspiring","You are lovely","You are wonderful","You are unique",
+    "You are talented","You are thoughtful","You are fearless","You are radiant","You are magical",
+    "You are creative","You are charming","You are graceful","You are shining","You are precious",
+    "You are courageous","You are adorable","You are delightful","You are remarkable","You are gorgeous",
+    "You are generous","You are resilient","You are thoughtful","You are incredible","You are fabulous",
+    "You are joyful","You are beautiful","You are unstoppable","You are comforting","You are positive",
+    "You are gentle","You are loyal","You are brave","You are insightful","You are caring"
+  ];
+
+  let running = false;
+  let score = 0;
+  const scoreEl = document.getElementById('score');
+  const box = document.getElementById('complimentBox');
+  let complimentIdx = Math.floor(Math.random()*COMPLIMENTS.length);
+  function nextCompliment(){ complimentIdx = (complimentIdx+1)%COMPLIMENTS.length; return COMPLIMENTS[complimentIdx]; }
+
+  /* Web Audio API: synthetic pop */
+  let audioCtx;
+  function initAudioCtx(){
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function playPop(){
+    initAudioCtx();
+    const ctx = audioCtx;
+    const duration = 0.12 + Math.random()*0.05;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+    const startFreq = 800 + Math.random()*400;
+    const endFreq   = 220 + Math.random()*120;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.4, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    const noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * duration), ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random()*2 - 1) * (1 - i/data.length);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 600;
+
+    noise.connect(filter).connect(noiseGain).connect(ctx.destination);
+    osc.connect(gain).connect(ctx.destination);
+
+    osc.start(now); noise.start(now);
+    osc.stop(now + duration); noise.stop(now + duration);
+  }
+
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function spawnBalloon(){
+    if(!running) return;
+    const b = document.createElement('div');
+    b.className='balloon';
+    const x = rand(5,95);
+    b.style.left = x+'vw';
+    const s = rand(.85,1.25);
+    b.style.transform = `translateX(-50%) scale(${s})`;
+    b.style.setProperty('--grad', COLORS[Math.floor(Math.random()*COLORS.length)]);
+    const string = document.createElement('div');
+    string.className='string';
+    b.appendChild(string);
+
+    const dur = rand(10,18);
+    b.style.animation = `floatUp ${dur}s linear forwards`;
+    const wiggle = setInterval(()=>{
+      if(!document.body.contains(b)){ clearInterval(wiggle); return; }
+      const dx = Math.sin(performance.now()/600 + Math.random()*2)*0.6;
+      b.style.left = `calc(${x}vw + ${dx}vw)`;
+    }, 220);
+
+    const popHandler = ()=>popBalloon(b);
+    b.addEventListener('click', popHandler);
+    b.addEventListener('touchstart', (e)=>{ e.preventDefault(); popHandler(); }, {passive:false});
+    b.addEventListener('animationend', ()=> b.remove());
+    layer.appendChild(b);
+  }
+
+  function popBalloon(b){
+    if(!b || b.classList.contains('popping')) return;
+    b.classList.add('popping');
+    const rect = b.getBoundingClientRect();
+    burstFx(rect);
+    dropEmojiFromRect(rect);
+    showCompliment(rect);
+    playPop();
+    score++; scoreEl.textContent = score;
+    setTimeout(()=> b.remove(), 220);
+  }
+
+  function showCompliment(rect){
+    const text = nextCompliment();
+    box.textContent = text;
+    const x = rect.left + rect.width/2;
+    const y = Math.max(60, rect.top - 10);
+    box.style.left = x+'px';
+    box.style.top  = y+'px';
+    box.style.animation = 'none'; void box.offsetWidth;
+    box.style.animation = 'complimentInOut 1.6s ease-out forwards';
+  }
+
+  function burstFx(rect){
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/3;
+    const count = 18;
+    for(let i=0;i<count;i++){
+      const ang = (Math.PI*2)*i/count + Math.random()*0.3;
+      const sp = rand(80,200);
+      particles.push({ x:cx, y:cy, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, life:0, max:rand(.4,.9), color:`hsla(${Math.floor(rand(0,360))},90%,70%,1)` });
+    }
+  }
+  const particles=[];
+  function tickFx(dt){
+    fctx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.life += dt; p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 380*dt;
+      const a = Math.max(0, 1 - p.life/p.max);
+      fctx.fillStyle = p.color.replace(',1)', `,${a})`);
+      fctx.beginPath(); fctx.arc(p.x,p.y,3,0,Math.PI*2); fctx.fill();
+      if(p.life>p.max) particles.splice(i,1);
+    }
+  }
+  let lastT=0;
+  function loopFx(t){
+    const dt = Math.min(0.032,(t-lastT)/1000||0.016); lastT=t;
+    tickFx(dt);
+    requestAnimationFrame(loopFx);
+  }
+  requestAnimationFrame(loopFx);
+
+  function dropEmojiFromRect(rect){
+    const e = document.createElement('div');
+    e.className='emoji';
+    e.textContent = EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+    e.style.left = (rect.left + rect.width/2) + 'px';
+    e.style.top  = (rect.top + rect.height/3) + 'px';
+    document.body.appendChild(e);
+
+    const vx = rand(-60,60), vy0 = rand(-40,-10);
+    let x = rect.left + rect.width/2, y = rect.top + rect.height/3, vy = vy0;
+    const start = performance.now();
+    function fall(t){
+      const dt = Math.min(.032,(t-(fall._last||t))/1000); fall._last = t;
+      vy += 380*dt; x += vx*dt; y += vy*dt;
+      e.style.transform = `translate(${x}px, ${y}px) rotate(${(t-start)/10%360}deg)`;
+      if(y<innerHeight+40) requestAnimationFrame(fall);
+      else e.remove();
+    }
+    requestAnimationFrame(fall);
+  }
+
+  /* ===== Game flow with intro + finish ===== */
+  let spawner=null, waveTimer=null;
+
+  const controls = document.getElementById('controls');
+  const finishBtn = document.getElementById('finishBtn');
+  const finishModal = document.getElementById('finishModal');
+  const finalScoreEl = document.getElementById('finalScore');
+  const playAgainBtn = document.getElementById('playAgainBtn');
+
+  function startGame(){
+    if(spawner) clearInterval(spawner);
+    if(waveTimer) clearInterval(waveTimer);
+    document.querySelectorAll('.balloon').forEach(b=>b.remove());
+    score = 0; scoreEl.textContent = score;
+    running = true;
+
+    document.getElementById('intro').style.display='none';
+    finishModal.classList.add('hidden');
+    controls.style.display='flex';
+
+    // first user gesture ensures audio context can play
+    initAudioCtx();
+
+    spawner = setInterval(()=> spawnBalloon(), 600);
+    waveTimer = setInterval(()=>{
+      if(!running) return;
+      for(let i=0;i<5;i++) setTimeout(()=>spawnBalloon(), i*120);
+    }, 5000);
+  }
+
+  function stopGame(){
+    running=false;
+    if(spawner) clearInterval(spawner);
+    if(waveTimer) clearInterval(waveTimer);
+    spawner = waveTimer = null;
+    document.querySelectorAll('.balloon').forEach(b=>b.remove());
+    controls.style.display='none';
+  }
+
+  function finishGame(){
+    stopGame();
+    finalScoreEl.textContent = String(score);
+    finishModal.classList.remove('hidden');
+  }
+
+  const okBtn = document.getElementById('okStart');
+  const laterBtn = document.getElementById('laterBtn');
+  const startBtn = document.getElementById('startBtn');
+
+  okBtn.addEventListener('click', startGame);
+  laterBtn.addEventListener('click', ()=>{
+    document.getElementById('intro').style.display='none';
+    startBtn.style.display='block';
+  });
+  startBtn.addEventListener('click', ()=>{
+    startBtn.style.display='none';
+    startGame();
+  });
+
+  finishBtn.addEventListener('click', finishGame);
+  playAgainBtn.addEventListener('click', ()=>{
+    finishModal.classList.add('hidden');
+    startGame();
+  });
+
+  addEventListener('visibilitychange', ()=>{ if(document.hidden) stopGame(); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Happy Birthday Shaymaa</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Pacifico&family=Great+Vibes&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/index.css">
+</head>
+<body>
+
+<!-- Hidden YouTube Player -->
+<div id="youtubePlayer"></div>
+
+<!-- Music Control Button -->
+<button class="music-control" id="musicBtn" title="Toggle Music">🎵</button>
+
+<!-- Surprise Button (LEFT SIDE) -->
+<a href="surprise.html" class="surprise-btn" id="surpriseBtn">
+  <span class="surprise-icon">🎁</span>
+  <span class="surprise-text">Surprise</span>
+</a>
+
+<!-- Shooting stars background - FULL SCREEN -->
+<canvas id="starsCanvas"></canvas>
+
+<!-- Start button stage -->
+<div class="start-stage" id="startStage">
+  <button class="start-btn" id="startBtn">✨ Press ✨</button>
+</div>
+
+<!-- Main content wrapper -->
+<div class="content-wrapper">
+  <!-- Birthday header with date and title -->
+  <div class="birthday-header" id="birthdayHeader">
+    <div class="date-badge">
+      <span class="date-text">🎂 18th October 2025 🎂</span>
+    </div>
+    <h1 class="birthday-title">Happy Birthday Shaymaa</h1>
+    <div class="heart-decoration">
+      <span>💖</span>
+      <span>✨</span>
+      <span>💖</span>
+    </div>
+  </div>
+  
+  <!-- Birthday content (image) -->
+  <div class="birthday-content" id="birthdayContent">
+    <img class="birthday-image"
+         src="https://template.canva.com/EAFSOTh3y_Y/1/0/1600w-FfUwtkO7sLc.jpg"
+         alt="Birthday">
+  </div>
+</div>
+
+<!-- Confetti canvas -->
+<canvas id="confettiCanvas"></canvas>
+
+<!-- Canvas Confetti Library -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+<!-- YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script src="js/index.js"></script>
+</body>
+</html>
